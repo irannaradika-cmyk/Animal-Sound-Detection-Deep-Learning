@@ -1,0 +1,22 @@
+# Raw audio dataset
+dataset/raw/
+
+# Processed dataset
+dataset/processed/
+
+# NumPy data files
+*.npy
+
+# Trained model
+*.keras
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+
+# Temporary files
+*.tmp
