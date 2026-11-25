@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 
@@ -59,3 +61,34 @@ print("Test Accuracy:", round(test_accuracy * 100, 2), "%")
 model.save("animal_sound_model.keras")
 
 print("Model saved successfully!")
+# Plot Training and Validation Accuracy
+plt.figure(figsize=(8, 5))
+
+plt.plot(history.history["accuracy"], label="Training Accuracy")
+plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+
+plt.title("Model Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.grid()
+
+plt.savefig("accuracy_graph.png")
+plt.show()
+
+# Plot Training and Validation Loss
+plt.figure(figsize=(8, 5))
+
+plt.plot(history.history["loss"], label="Training Loss")
+plt.plot(history.history["val_loss"], label="Validation Loss")
+
+plt.title("Model Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid()
+
+plt.savefig("loss_graph.png")
+plt.show()
+plt.savefig("accuracy_graph.png")
+plt.savefig("loss_graph.png")

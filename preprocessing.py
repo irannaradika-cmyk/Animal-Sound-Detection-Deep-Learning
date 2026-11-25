@@ -1,3 +1,4 @@
+
 import os
 import librosa
 import numpy as np
@@ -29,6 +30,9 @@ def preprocess_audio(file_path):
 
     # Load audio and convert to mono
     audio, sr = librosa.load(file_path, sr=SAMPLE_RATE, mono=True)
+
+    # Remove unnecessary silence
+    audio, _ = librosa.effects.trim(audio, top_db=60)
 
     # Normalize audio volume
     if np.max(np.abs(audio)) > 0:
