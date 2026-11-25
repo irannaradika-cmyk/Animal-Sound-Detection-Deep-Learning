@@ -1,4 +1,3 @@
-
 import streamlit as st
 import numpy as np
 import librosa
@@ -9,6 +8,7 @@ import altair as alt
 import io
 from datetime import datetime
 from pathlib import Path
+
 
 # --------------------------------
 # 1. PAGE SETTINGS
@@ -29,7 +29,9 @@ DB_NAME = str(PROJECT_DIR / "detection_history.db")
 # --------------------------------
 
 def create_history_table():
+
     with sqlite3.connect(DB_NAME) as conn:
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS detection_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,8 +58,11 @@ def create_history_table():
 
 
 def save_history(file_name, results):
+
     with sqlite3.connect(DB_NAME) as conn:
+
         for result in results:
+
             conn.execute("""
                 INSERT INTO detection_history
                 (date_time, file_name, animal, confidence,
@@ -74,16 +79,21 @@ def save_history(file_name, results):
 
 
 def save_uploaded_audio(file_name, duration, best_result):
+
     if best_result is not None:
+
         predicted_animal = best_result["animal"]
         confidence = best_result["confidence"]
         status = "Animal Detected"
+
     else:
+
         predicted_animal = "Not Detected"
         confidence = 0
         status = "No Animal Detected"
 
     with sqlite3.connect(DB_NAME) as conn:
+
         conn.execute("""
             INSERT INTO uploaded_audio_history
             (date_time, file_name, duration,
@@ -100,7 +110,9 @@ def save_uploaded_audio(file_name, duration, best_result):
 
 
 def get_history():
+
     with sqlite3.connect(DB_NAME) as conn:
+
         return pd.read_sql_query(
             "SELECT * FROM detection_history ORDER BY id DESC",
             conn
@@ -108,7 +120,9 @@ def get_history():
 
 
 def get_uploaded_history():
+
     with sqlite3.connect(DB_NAME) as conn:
+
         return pd.read_sql_query(
             "SELECT * FROM uploaded_audio_history ORDER BY id DESC",
             conn
@@ -116,7 +130,9 @@ def get_uploaded_history():
 
 
 def clear_history():
+
     with sqlite3.connect(DB_NAME) as conn:
+
         conn.execute("DELETE FROM detection_history")
         conn.execute("DELETE FROM uploaded_audio_history")
 
@@ -125,13 +141,36 @@ create_history_table()
 
 
 # --------------------------------
-# 3. LOAD TRAINED MODEL
+# 3. LOAD TRAINED 1D CNN MODEL
 # --------------------------------
 
 @st.cache_resource
 def load_animal_model():
+
     model_path = PROJECT_DIR / "models" / "animal_sound_model.keras"
-    classes_path = PROJECT_DIR / "animal_classes.npy"
+
+    # Prefer classes.npy because this is what
+    # the training script saves.
+    classes_path = PROJECT_DIR / "classes.npy"
+
+    # Use the older filename only if classes.npy
+    # does not exist.
+    if not classes_path.exists():
+
+        classes_path = PROJECT_DIR / "animal_classes.npy"
+
+    if not model_path.exists():
+
+        raise FileNotFoundError(
+            "Trained model not found in the models folder."
+        )
+
+    if not classes_path.exists():
+
+        raise FileNotFoundError(
+            "Animal class file not found. "
+            "Expected classes.npy or animal_classes.npy."
+        )
 
     model = tf.keras.models.load_model(model_path)
 
@@ -140,10 +179,24 @@ def load_animal_model():
         allow_pickle=True
     )
 
+    if len(classes) != model.output_shape[-1]:
+
+        raise ValueError(
+            "Number of animal classes does not match "
+            "the model output."
+        )
+
     return model, classes
 
 
-model, classes = load_animal_model()
+try:
+
+    model, classes = load_animal_model()
+
+except Exception as error:
+
+    st.error(f"Model loading error: {error}")
+    st.stop()
 
 
 # --------------------------------
@@ -151,14 +204,19 @@ model, classes = load_animal_model()
 # --------------------------------
 
 def preprocess_audio(audio):
+
+    # Use a fixed 2-second audio segment.
     audio = audio[:32000]
 
+    # Add zeros if audio is shorter than 2 seconds.
     if len(audio) < 32000:
+
         audio = np.pad(
             audio,
             (0, 32000 - len(audio))
         )
 
+    # Extract Mel Spectrogram features.
     mel = librosa.feature.melspectrogram(
         y=audio,
         sr=16000,
@@ -167,54 +225,86 @@ def preprocess_audio(audio):
         hop_length=256
     )
 
-    mel = librosa.power_to_db(
+    # Convert to decibel scale.
+    mel_db = librosa.power_to_db(
         mel,
         ref=np.max
     )
 
-    return mel
+    return mel_db
 
 
 # --------------------------------
-# 5. TIME FORMATTING
+# 5. CONVERT FEATURES FOR 1D CNN
+# --------------------------------
+
+def prepare_model_input(features):
+
+    # Original shape: (64, 126)
+    # Transposed shape: (126, 64)
+    features = np.transpose(features, (1, 0))
+
+    # Add batch dimension.
+    # Final shape: (1, 126, 64)
+    features = np.expand_dims(
+        features,
+        axis=0
+    )
+
+    return features.astype(np.float32)
+
+
+# --------------------------------
+# 6. TIME FORMATTING
 # --------------------------------
 
 def format_audio_time(seconds):
+
     total_seconds = max(0.0, float(seconds))
 
     minutes = int(total_seconds // 60)
+
     remaining_seconds = total_seconds % 60
 
     return f"{minutes:02d}:{remaining_seconds:04.1f}"
 
 
 # --------------------------------
-# 6. ANIMAL DETECTION
+# 7. ANIMAL DETECTION
 # --------------------------------
 
 def detect_animals(audio, sr):
+
     window_size = 2 * sr
+
     step_size = int(0.5 * sr)
 
     results = []
 
     if len(audio) == 0:
+
         return results
 
     for start in range(0, len(audio), step_size):
-        end = min(start + window_size, len(audio))
+
+        end = min(
+            start + window_size,
+            len(audio)
+        )
+
         chunk = audio[start:end]
 
         if len(chunk) == 0:
+
             continue
 
+        # Extract audio features.
         features = preprocess_audio(chunk)
 
-        features = np.expand_dims(
-            features,
-            axis=(0, -1)
-        )
+        # Convert features for 1D CNN.
+        features = prepare_model_input(features)
 
+        # Predict animal.
         prediction = model.predict(
             features,
             verbose=0
@@ -223,36 +313,54 @@ def detect_animals(audio, sr):
         index = np.argmax(prediction)
 
         results.append({
+
             "animal": str(classes[index]),
-            "confidence": float(prediction[index] * 100),
+
+            "confidence": float(
+                prediction[index] * 100
+            ),
+
             "start": start / sr,
+
             "end": end / sr
+
         })
 
         if end == len(audio):
+
             break
 
     return results
 
 
 # --------------------------------
-# 7. MERGE DETECTIONS
+# 8. MERGE DETECTIONS
 # --------------------------------
 
 def merge_detections(results):
+
     filtered = [
-        r for r in results
-        if r["confidence"] >= 60
+
+        result for result in results
+
+        if result["confidence"] >= 60
+
     ]
 
     merged = []
 
     for result in filtered:
+
         if (
+
             merged
+
             and merged[-1]["animal"] == result["animal"]
+
             and result["start"] <= merged[-1]["end"] + 0.5
+
         ):
+
             merged[-1]["end"] = max(
                 merged[-1]["end"],
                 result["end"]
@@ -264,34 +372,33 @@ def merge_detections(results):
             )
 
         else:
+
             merged.append(result.copy())
 
     return merged
 
 
-# CUSTOM DESIGN
+# --------------------------------
+# 9. CUSTOM DESIGN
+# --------------------------------
 
 st.markdown("""
 <style>
 
-/* Main background */
 .stApp {
     background-color: #f4f6fc;
 }
 
-/* Main title */
 h1 {
     color: #253858;
     text-align: center;
     font-weight: bold;
 }
 
-/* Section headings */
 h2, h3 {
     color: #3949ab;
 }
 
-/* Buttons */
 .stButton > button {
     background-color: #5146d8;
     color: white;
@@ -301,18 +408,15 @@ h2, h3 {
     border: none;
 }
 
-/* Button hover */
 .stButton > button:hover {
     background-color: #3528a8;
     color: white;
 }
 
-/* Information boxes */
 .stAlert {
     border-radius: 12px;
 }
 
-/* Metric cards */
 [data-testid="stMetric"] {
     background-color: white;
     padding: 18px;
@@ -320,7 +424,6 @@ h2, h3 {
     border: 1px solid #e0e4f0;
 }
 
-/* Upload area */
 [data-testid="stFileUploader"] {
     background-color: white;
     padding: 18px;
@@ -333,15 +436,23 @@ h2, h3 {
 
 
 # --------------------------------
-# 8. APPLICATION HEADER
+# 10. APPLICATION HEADER
 # --------------------------------
 
 st.title("🐾 Animal Sound Classification")
 
 st.markdown("""
-This AI application identifies animal sounds from uploaded audio files.
+### Welcome to Animal Sound Detection!
 
-It uses a CNN model with Mel spectrogram feature extraction.
+Upload an audio recording and let the AI model
+identify whether it contains a dog, cat or sheep sound.
+
+The application uses:
+
+- Log-Mel Spectrogram feature extraction
+- Deep Learning with a 1D CNN
+- Animal sound classification
+- Confidence score and detection history
 """)
 
 st.info(
@@ -352,18 +463,20 @@ st.divider()
 
 
 # --------------------------------
-# 9. AUDIO UPLOAD
+# 11. AUDIO UPLOAD
 # --------------------------------
 
 st.subheader("🎵 Upload Animal Audio")
 
 uploaded_file = st.file_uploader(
-    "Upload Animal Audio",
+    "Choose an audio file",
     type=["wav", "mp3", "ogg", "flac"]
 )
 
 if uploaded_file is not None:
+
     st.audio(uploaded_file.getvalue())
+
 
 predict_button = st.button(
     "🔍 Predict Animal",
@@ -372,7 +485,7 @@ predict_button = st.button(
 
 
 # --------------------------------
-# 10. PREDICTION
+# 12. PREDICTION
 # --------------------------------
 
 if uploaded_file is not None and predict_button:
@@ -380,8 +493,10 @@ if uploaded_file is not None and predict_button:
     audio_bytes = uploaded_file.getvalue()
 
     try:
+
         with st.spinner("Detecting animal sounds..."):
 
+            # Load audio at 16 kHz.
             audio, sr = librosa.load(
                 io.BytesIO(audio_bytes),
                 sr=16000,
@@ -389,19 +504,22 @@ if uploaded_file is not None and predict_button:
             )
 
             if len(audio) == 0:
+
                 st.error("Uploaded audio is empty.")
 
             else:
+
                 duration = len(audio) / sr
 
-                # Overall prediction from first 2 seconds
+                # Extract features from the first 2 seconds.
                 overall_features = preprocess_audio(audio)
 
-                overall_features = np.expand_dims(
-                    overall_features,
-                    axis=(0, -1)
+                # Convert to 1D CNN input format.
+                overall_features = prepare_model_input(
+                    overall_features
                 )
 
+                # Predict the animal.
                 overall_prediction = model.predict(
                     overall_features,
                     verbose=0
@@ -419,7 +537,7 @@ if uploaded_file is not None and predict_button:
                     overall_prediction[predicted_index] * 100
                 )
 
-                # Detect animal intervals
+                # Detect animal sounds in audio windows.
                 raw_results = detect_animals(
                     audio,
                     sr
@@ -430,38 +548,52 @@ if uploaded_file is not None and predict_button:
                 )
 
                 best_result = {
+
                     "animal": predicted_animal,
+
                     "confidence": confidence
+
                 }
 
-                # Save file history
+                # Save uploaded audio history.
                 save_uploaded_audio(
                     uploaded_file.name,
                     duration,
                     best_result
                 )
 
-                # Save detailed segment history
+                # Save individual detection records.
                 save_history(
                     uploaded_file.name,
                     results
                 )
 
+                # Store result for display.
                 st.session_state["last_prediction"] = {
+
                     "file_name": uploaded_file.name,
+
                     "animal": predicted_animal,
+
                     "confidence": confidence,
+
                     "duration": duration,
+
                     "probabilities": overall_prediction * 100,
+
                     "results": results
+
                 }
 
-    except Exception as e:
-        st.error(f"Audio processing error: {e}")
+    except Exception as error:
+
+        st.error(
+            f"Audio processing error: {error}"
+        )
 
 
 # --------------------------------
-# 11. DISPLAY PREDICTION
+# 13. DISPLAY PREDICTION
 # --------------------------------
 
 if "last_prediction" in st.session_state:
@@ -469,6 +601,7 @@ if "last_prediction" in st.session_state:
     result = st.session_state["last_prediction"]
 
     st.divider()
+
     st.subheader("🐾 Prediction Result")
 
     st.success(
@@ -496,35 +629,46 @@ if "last_prediction" in st.session_state:
         f"Audio file: {result['file_name']}"
     )
 
-    # Confidence chart
+    # Confidence chart.
     st.subheader("📊 Confidence for Each Animal")
 
     chart_data = pd.DataFrame({
+
         "Animal": [
+
             str(animal).capitalize()
+
             for animal in classes
+
         ],
+
         "Confidence (%)": result["probabilities"]
+
     })
 
     chart = alt.Chart(chart_data).mark_bar(
         cornerRadiusEnd=8
     ).encode(
+
         x=alt.X(
             "Confidence (%):Q",
             title="Confidence Score (%)",
             scale=alt.Scale(domain=[0, 100])
         ),
+
         y=alt.Y(
             "Animal:N",
             title="Animal",
             sort="-x"
         ),
+
         color="Animal:N",
+
         tooltip=[
             "Animal",
             "Confidence (%)"
         ]
+
     )
 
     st.altair_chart(
@@ -532,7 +676,7 @@ if "last_prediction" in st.session_state:
         use_container_width=True
     )
 
-    # Detection intervals
+    # Detection intervals.
     st.subheader("🐾 Detected Animal Time Intervals")
 
     st.caption(
@@ -542,15 +686,24 @@ if "last_prediction" in st.session_state:
 
     if result["results"]:
 
-        result_df = pd.DataFrame(result["results"])
+        result_df = pd.DataFrame(
+            result["results"]
+        )
 
         result_df = result_df.rename(
+
             columns={
+
                 "animal": "Animal",
+
                 "confidence": "Confidence (%)",
+
                 "start": "Start (sec)",
+
                 "end": "End (sec)"
+
             }
+
         )
 
         result_df["Animal"] = (
@@ -566,31 +719,47 @@ if "last_prediction" in st.session_state:
         )
 
         result_df["Duration (sec)"] = (
-            result_df["End (sec)"] - result_df["Start (sec)"]
+
+            result_df["End (sec)"]
+            - result_df["Start (sec)"]
+
         ).round(2)
 
         st.dataframe(
+
             result_df[
+
                 [
+
                     "Animal",
+
                     "Start Time",
+
                     "End Time",
+
                     "Duration (sec)",
+
                     "Confidence (%)"
+
                 ]
+
             ],
+
             use_container_width=True,
+
             hide_index=True
+
         )
 
     else:
+
         st.info(
             "No animal sound detected above 60% confidence."
         )
 
 
 # --------------------------------
-# 12. DETAILED DETECTION HISTORY
+# 14. DETECTION HISTORY
 # --------------------------------
 
 st.divider()
@@ -598,7 +767,9 @@ st.divider()
 st.header("📜 Detailed Detection History")
 
 file_history = get_uploaded_history()
+
 detection_history = get_history()
+
 
 if file_history.empty and detection_history.empty:
 
@@ -606,15 +777,27 @@ if file_history.empty and detection_history.empty:
 
 else:
 
-    # Summary
+    # Summary information.
     total_audio_files = len(file_history)
+
     total_detections = len(detection_history)
 
     detected_files = (
-        len(file_history[
-            file_history["status"] == "Animal Detected"
-        ])
-        if not file_history.empty else 0
+
+        len(
+
+            file_history[
+
+                file_history["status"] == "Animal Detected"
+
+            ]
+
+        )
+
+        if not file_history.empty
+
+        else 0
+
     )
 
     col1, col2, col3 = st.columns(3)
@@ -649,28 +832,49 @@ else:
         )
 
         file_display = file_display.rename(
+
             columns={
+
                 "date_time": "Date & Time",
+
                 "file_name": "Audio Filename",
+
                 "predicted_animal": "Predicted Animal",
+
                 "confidence": "Confidence (%)",
+
                 "status": "Status"
+
             }
+
         )
 
         st.dataframe(
+
             file_display[
+
                 [
+
                     "Date & Time",
+
                     "Audio Filename",
+
                     "Duration (sec)",
+
                     "Predicted Animal",
+
                     "Confidence (%)",
+
                     "Status"
+
                 ]
+
             ],
+
             use_container_width=True,
+
             hide_index=True
+
         )
 
         audio_csv = file_history.to_csv(
@@ -678,19 +882,25 @@ else:
         ).encode("utf-8")
 
         st.download_button(
+
             "⬇️ Download Audio History",
+
             data=audio_csv,
+
             file_name="animal_audio_history.csv",
+
             mime="text/csv"
+
         )
 
     else:
+
         st.info("No uploaded audio records available.")
 
     st.divider()
 
     # --------------------------------
-    # EVERY DETECTED SEGMENT
+    # INDIVIDUAL DETECTION RECORDS
     # --------------------------------
 
     st.subheader("🐾 Individual Detection Records")
@@ -708,8 +918,11 @@ else:
         )
 
         detail_display["Duration (sec)"] = (
+
             detail_display["end_time"]
+
             - detail_display["start_time"]
+
         ).round(2)
 
         detail_display["animal"] = (
@@ -717,28 +930,49 @@ else:
         )
 
         detail_display = detail_display.rename(
+
             columns={
+
                 "date_time": "Date & Time",
+
                 "file_name": "Audio Filename",
+
                 "animal": "Detected Animal",
+
                 "confidence": "Confidence (%)"
+
             }
+
         )
 
         st.dataframe(
+
             detail_display[
+
                 [
+
                     "Date & Time",
+
                     "Audio Filename",
+
                     "Detected Animal",
+
                     "Confidence (%)",
+
                     "Start Time",
+
                     "End Time",
+
                     "Duration (sec)"
+
                 ]
+
             ],
+
             use_container_width=True,
+
             hide_index=True
+
         )
 
         detection_csv = detail_display.to_csv(
@@ -746,13 +980,19 @@ else:
         ).encode("utf-8")
 
         st.download_button(
+
             "⬇️ Download Detailed Detection History",
+
             data=detection_csv,
+
             file_name="animal_detection_details.csv",
+
             mime="text/csv"
+
         )
 
     else:
+
         st.info(
             "No animal detection segments are available."
         )
@@ -777,6 +1017,8 @@ else:
             None
         )
 
-        st.success("All prediction history has been cleared.")
+        st.success(
+            "All prediction history has been cleared."
+        )
 
         st.rerun()
