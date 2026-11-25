@@ -6,6 +6,9 @@ dataset/processed/
 
 # NumPy data files
 *.npy
+# Evaluation outputs kept with the results
+!results/test_predictions.npy
+!results/test_actual_labels.npy
 
 # Trained model
 *.keras

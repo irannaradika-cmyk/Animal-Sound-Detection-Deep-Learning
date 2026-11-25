@@ -8,6 +8,7 @@ import sqlite3
 import altair as alt
 import io
 from datetime import datetime
+from pathlib import Path
 
 # --------------------------------
 # 1. PAGE SETTINGS
@@ -19,7 +20,8 @@ st.set_page_config(
     layout="wide"
 )
 
-DB_NAME = "detection_history.db"
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+DB_NAME = str(PROJECT_DIR / "detection_history.db")
 
 
 # --------------------------------
@@ -128,12 +130,13 @@ create_history_table()
 
 @st.cache_resource
 def load_animal_model():
-    model = tf.keras.models.load_model(
-        "animal_sound_model.keras"
-    )
+    model_path = PROJECT_DIR / "models" / "animal_sound_model.keras"
+    classes_path = PROJECT_DIR / "animal_classes.npy"
+
+    model = tf.keras.models.load_model(model_path)
 
     classes = np.load(
-        "animal_classes.npy",
+        classes_path,
         allow_pickle=True
     )
 
