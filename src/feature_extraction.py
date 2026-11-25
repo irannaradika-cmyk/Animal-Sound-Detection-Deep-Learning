@@ -8,6 +8,7 @@ ANIMALS = ["dog", "cat", "sheep"]
 
 SAMPLE_RATE = 16000
 N_MELS = 64
+TARGET_LENGTH = SAMPLE_RATE * 2  # 2 seconds = 32000 samples
 
 X = []
 y = []
@@ -16,7 +17,6 @@ file_names = []
 for animal in ANIMALS:
 
     folder_path = os.path.join(DATASET_PATH, animal)
-
     files = sorted(os.listdir(folder_path))
 
     for file in files:
@@ -25,11 +25,29 @@ for animal in ANIMALS:
 
             file_path = os.path.join(folder_path, file)
 
+            # 1. Load and resample audio to 16 kHz   (Resampling sr = 16000)
             audio, sr = librosa.load(
                 file_path,
                 sr=SAMPLE_RATE
             )
 
+            # 2. Normalize audio volume  (Normalization)
+            audio = librosa.util.normalize(audio)
+
+            # 3. Remove silence from beginning and end  (Trimming)
+            audio, _ = librosa.effects.trim(audio)
+
+            # 4. Make audio exactly 2 seconds long
+            if len(audio) > TARGET_LENGTH:
+                audio = audio[:TARGET_LENGTH]
+
+            elif len(audio) < TARGET_LENGTH:
+                audio = np.pad(                      #  (padding)
+                    audio,
+                    (0, TARGET_LENGTH - len(audio))
+                )
+
+            # Extract Mel Spectrogram
             mel = librosa.feature.melspectrogram(
                 y=audio,
                 sr=sr,
@@ -38,6 +56,7 @@ for animal in ANIMALS:
                 hop_length=256
             )
 
+            # Convert to Log-Mel Spectrogram
             mel_db = librosa.power_to_db(
                 mel,
                 ref=np.max
