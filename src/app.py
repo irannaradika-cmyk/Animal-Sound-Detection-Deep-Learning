@@ -269,6 +269,69 @@ def merge_detections(results):
     return merged
 
 
+# CUSTOM DESIGN
+
+st.markdown("""
+<style>
+
+/* Main background */
+.stApp {
+    background-color: #f4f6fc;
+}
+
+/* Main title */
+h1 {
+    color: #253858;
+    text-align: center;
+    font-weight: bold;
+}
+
+/* Section headings */
+h2, h3 {
+    color: #3949ab;
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: #5146d8;
+    color: white;
+    border-radius: 10px;
+    height: 48px;
+    font-weight: bold;
+    border: none;
+}
+
+/* Button hover */
+.stButton > button:hover {
+    background-color: #3528a8;
+    color: white;
+}
+
+/* Information boxes */
+.stAlert {
+    border-radius: 12px;
+}
+
+/* Metric cards */
+[data-testid="stMetric"] {
+    background-color: white;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid #e0e4f0;
+}
+
+/* Upload area */
+[data-testid="stFileUploader"] {
+    background-color: white;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px dashed #5146d8;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
 # --------------------------------
 # 8. APPLICATION HEADER
 # --------------------------------
