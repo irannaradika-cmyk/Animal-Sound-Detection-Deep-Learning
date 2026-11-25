@@ -17,7 +17,7 @@ classes = np.load("classes.npy")
 X_test = X_test[..., np.newaxis]
 
 # Load trained CNN model
-model = tf.keras.models.load_model("animal_sound_model.keras")
+model = tf.keras.models.load_model("models/animal_sound_model.keras")
 
 # Make predictions
 predictions = model.predict(X_test)
@@ -49,7 +49,7 @@ disp = ConfusionMatrixDisplay(
 disp.plot(cmap="Blues", values_format="d")
 plt.title("Animal Sound Detection - Confusion Matrix")
 plt.tight_layout()
-plt.savefig("confusion_matrix.png")
+plt.savefig("results/confusion_matrix.png")
 plt.show()
 
 print("\nModel evaluation completed!")
