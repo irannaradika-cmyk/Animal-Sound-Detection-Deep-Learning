@@ -10,19 +10,19 @@ ANIMAL_SOUND_DETECTION/
 │   ├── raw/                 # Add your source audio here (not included in Git)
 │   └── processed/           # Generated 2-second WAV clips (not included in Git)
 ├── models/
-│   └── animal_sound_model.keras
-├── results/                 # Evaluation and training plots
+│   ├── animal_sound_cnn.keras
+│   └── animal_classes.npy
+├── results/                 # Evaluation plots and predictions
 ├── src/
 │   ├── app.py               # Streamlit application
-│   ├── preprocessing.py     # Prepare source audio
+│   ├── preprocess.py        # Prepare source audio
 │   ├── feature_extraction.py
-│   ├── model_training.py    # Encode labels and split data
-│   ├── cnn_model.py         # Train the 1D CNN
+│   ├── train_model.py       # Train the 1D CNN
 │   └── model_evaluation.py
 └── README.md
 ```
 
-The training scripts read and write data files in the project root, so run their commands from the repository root. Generated `.npy` data and raw/processed audio are excluded by `.gitignore` and need to be recreated for a fresh training run.
+The training scripts read and write feature and split data files in the project root, so run their commands from the repository root. The trained model and class mapping are saved under `models/`; evaluation plots and predictions are saved under `results/`. Generated `.npy` data and raw/processed audio are excluded by `.gitignore` and need to be recreated for a fresh training run.
 
 ## 1. Requirements
 
@@ -69,7 +69,7 @@ Use clearly labeled recordings and include examples for all three classes. The f
 From the repository root, run:
 
 ```powershell
-python src/preprocessing.py
+python src/preprocess.py
 ```
 
 For each source recording, the script converts audio to mono at 16 kHz, trims quiet portions, normalizes its level, and saves a two-second WAV file under `dataset/processed/<class>/`.
@@ -82,31 +82,23 @@ python src/feature_extraction.py
 
 This reads the processed class folders and creates `X_features.npy`, `y_labels.npy`, and `feature_file_names.npy` in the project root. Each recording becomes a 64-band log-Mel spectrogram; audio is represented as a fixed two-second sample.
 
-## 6. Encode labels and split the data
+## 6. Train the CNN
 
 ```powershell
-python src/model_training.py
+python src/train_model.py
 ```
 
-This script encodes the class names, makes a stratified 80/20 train/test split, and writes `X_train.npy`, `X_test.npy`, `y_train.npy`, `y_test.npy`, and `classes.npy` in the project root.
+This script encodes the class names, creates stratified training, validation, and test splits, and trains a 1D CNN for up to 30 epochs. It saves `models/animal_sound_cnn.keras`, the matching class mapping, split indices, and accuracy and loss plots under `results/`. Training time depends on the size of your dataset and computer.
 
-## 7. Train the CNN
-
-```powershell
-python src/cnn_model.py
-```
-
-Training uses a 1D CNN for up to 30 epochs. The script evaluates on the held-out test split and saves the model to `models/animal_sound_model.keras`, plus accuracy and loss plots under `results/`. Training time depends on the size of your dataset and computer.
-
-## 8. Evaluate the model
+## 7. Evaluate the model
 
 ```powershell
 python src/model_evaluation.py
 ```
 
-This prints per-class precision, recall, and F1 scores for the test split. Review these scores along with the saved plots when assessing model quality.
+This prints per-class precision, recall, and F1 scores for the test split, and saves the confusion-matrix plot and predictions under `results/`. Review these scores along with the saved plots when assessing model quality.
 
-## 9. Run the application
+## 8. Run the application
 
 ```powershell
 streamlit run src/app.py
@@ -124,7 +116,6 @@ Streamlit prints a local URL (usually `http://localhost:8501`) to open in your b
 
 ## Notes
 
-- The class mapping in `classes.npy` must correspond to the output order of the saved model. The training pipeline generates both together.
-- The app expects the model at `models/animal_sound_model.keras` and the class mapping at `classes.npy` (it can fall back to `animal_classes.npy`).
-- The repository also contains `src/train_model.py`, an alternate 2D CNN training script. The Streamlit app uses the 1D CNN architecture trained by `src/cnn_model.py`; use the steps above for a compatible model.
+- The class mapping in `models/animal_classes.npy` must correspond to the output order of `models/animal_sound_cnn.keras`. The training pipeline generates both together.
+- The repository also contains `src/cnn_model.py`, an older alternative training script. Use `src/train_model.py` for the model used by the Streamlit app.
 - This is a three-class classifier. Its confidence is the model's predicted probability, not a calibrated guarantee that an animal is present.

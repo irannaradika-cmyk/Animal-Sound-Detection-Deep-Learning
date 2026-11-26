@@ -1,0 +1,27 @@
+MODEL EVALUATION COMPARISON
+===========================
+
+Both result sets use the same 50 test examples and identical actual labels.
+Metrics below are calculated from the saved prediction arrays; no models were
+retrained to produce this comparison.
+
+Metric                         Saved evaluation   After validation fix   Change
+Accuracy                            90.00%               86.00%          -4.00 pp
+Correct predictions                   45                   43               -2
+Incorrect predictions                  5                    7               +2
+
+Per-class F1 score:
+Class                              Saved evaluation   After validation fix
+cat                                     0.88                  0.82
+dog                                     0.92                  0.95
+sheep                                   0.89                  0.74
+
+Saved evaluation inputs:
+  results/test_actual_labels.npy
+  results/test_predictions.npy
+
+After-validation-fix inputs:
+  test_actual_labels_1d.npy
+  test_predictions_1d.npy
+
+Accuracy change is measured in percentage points.

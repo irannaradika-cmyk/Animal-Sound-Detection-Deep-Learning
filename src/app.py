@@ -1,3 +1,4 @@
+
 import streamlit as st
 import numpy as np
 import librosa
@@ -148,16 +149,13 @@ create_history_table()
 @st.cache_resource
 def load_animal_model():
 
-    # Load model from project root
-    model_path = PROJECT_DIR / "animal_sound_model.keras"
-
-    # Load animal classes
-    classes_path = PROJECT_DIR / "animal_classes.npy"
+    model_path = PROJECT_DIR / "models" / "animal_sound_cnn.keras"
+    classes_path = PROJECT_DIR / "models" / "animal_classes.npy"
 
     if not model_path.exists():
 
         raise FileNotFoundError(
-            f"Model not found: {model_path}"
+            f"1D CNN model not found: {model_path}"
         )
 
     if not classes_path.exists():
@@ -173,16 +171,16 @@ def load_animal_model():
         allow_pickle=True
     )
 
-    if len(classes) != model.output_shape[-1]:
-
-        raise ValueError(
-            "Animal classes do not match model output."
-        )
-
     if tuple(model.input_shape[1:]) != (126, 64):
 
         raise ValueError(
             f"Unexpected model input shape: {model.input_shape}"
+        )
+
+    if len(classes) != model.output_shape[-1]:
+
+        raise ValueError(
+            "Animal classes do not match model output."
         )
 
     return model, classes
@@ -204,27 +202,47 @@ except Exception as error:
 
 def preprocess_audio(audio):
 
-    # 1. Normalize audio volume
-    audio = librosa.util.normalize(audio)
-
-    # 2. Remove silence
-    audio, _ = librosa.effects.trim(audio)
-
-    # 3. Make audio exactly 2 seconds long
     TARGET_LENGTH = 32000
 
-    if len(audio) > TARGET_LENGTH:
+    audio = np.asarray(
+        audio,
+        dtype=np.float32
+    )
 
-        audio = audio[:TARGET_LENGTH]
+    # Remove silence
+    audio, _ = librosa.effects.trim(
+        audio,
+        top_db=25
+    )
 
-    elif len(audio) < TARGET_LENGTH:
+    # Handle empty audio
+    if len(audio) == 0:
+
+        audio = np.zeros(
+            TARGET_LENGTH,
+            dtype=np.float32
+        )
+
+    # Normalize audio
+    peak = np.max(np.abs(audio))
+
+    if peak > 0:
+
+        audio = audio / peak
+
+    # Make audio exactly 2 seconds
+    if len(audio) < TARGET_LENGTH:
 
         audio = np.pad(
             audio,
             (0, TARGET_LENGTH - len(audio))
         )
 
-    # 4. Extract original Mel Spectrogram
+    else:
+
+        audio = audio[:TARGET_LENGTH]
+
+    # Extract Mel Spectrogram
     mel = librosa.feature.melspectrogram(
         y=audio,
         sr=16000,
@@ -233,7 +251,13 @@ def preprocess_audio(audio):
         hop_length=256
     )
 
-    return mel
+    # Convert to decibel scale
+    mel_db = librosa.power_to_db(
+        mel,
+        ref=np.max
+    )
+
+    return mel_db.astype(np.float32)
 
 
 # --------------------------------
@@ -245,10 +269,7 @@ def prepare_model_input(features):
     # Original shape: (64, 126)
     # Transposed shape: (126, 64)
 
-    features = np.transpose(
-        features,
-        (1, 0)
-    )
+    features = features.T
 
     # Add batch dimension
     # Final shape: (1, 126, 64)
@@ -267,7 +288,10 @@ def prepare_model_input(features):
 
 def format_audio_time(seconds):
 
-    total_seconds = max(0.0, float(seconds))
+    total_seconds = max(
+        0.0,
+        float(seconds)
+    )
 
     minutes = int(total_seconds // 60)
 
@@ -305,7 +329,7 @@ def detect_animals(audio, sr):
 
             continue
 
-        # Extract Mel Spectrogram
+        # Extract features
         features = preprocess_audio(chunk)
 
         # Prepare 1D CNN input
@@ -456,6 +480,7 @@ identify whether it contains a dog, cat or sheep sound.
 
 The application uses:
 
+- Audio preprocessing and normalization
 - Mel Spectrogram feature extraction
 - Deep Learning with a 1D CNN
 - Animal sound classification
@@ -518,7 +543,7 @@ if uploaded_file is not None and predict_button:
 
                 duration = len(audio) / sr
 
-                # Extract features
+                # Extract features for overall prediction
                 overall_features = preprocess_audio(audio)
 
                 # Prepare 1D CNN input
@@ -544,7 +569,7 @@ if uploaded_file is not None and predict_button:
                     overall_prediction[predicted_index] * 100
                 )
 
-                # Detect animal in audio windows
+                # Detect animals in audio windows
                 raw_results = detect_animals(
                     audio,
                     sr
@@ -688,7 +713,8 @@ if "last_prediction" in st.session_state:
 
     st.caption(
         "Approximate intervals estimated from overlapping "
-        "2-second audio windows."
+        "2-second audio windows. These are model predictions, "
+        "not manually verified animal sound boundaries."
     )
 
     if result["results"]:

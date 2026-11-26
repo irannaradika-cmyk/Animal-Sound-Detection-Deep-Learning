@@ -1,90 +1,118 @@
 
-import os
-import librosa
+from pathlib import Path
 import numpy as np
+import librosa
 import soundfile as sf
 
-# ----------------------------------
-# Folder paths
-# ----------------------------------
-RAW_FOLDER = "dataset/raw"
-PROCESSED_FOLDER = "dataset/processed"
+# --------------------------------
+# 1. SETTINGS
+# --------------------------------
 
-# ----------------------------------
-# Settings
-# ----------------------------------
-SAMPLE_RATE = 16000                # resampling  16000 HZ
-DURATION = 2  # seconds
-SAMPLES = SAMPLE_RATE * DURATION
+RAW_DIR = Path("dataset/raw")
+PROCESSED_DIR = Path("dataset/processed")
 
-ANIMALS = ["dog", "cat", "sheep"]
+ANIMALS = ["cat", "dog", "sheep"]
 
-# Create processed folder if it doesn't exist
-os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+SAMPLE_RATE = 16000
+DURATION = 2
+TARGET_LENGTH = SAMPLE_RATE * DURATION
 
 
-# ----------------------------------
-# Audio preprocessing function
-# ----------------------------------
+# --------------------------------
+# 2. AUDIO PREPROCESSING
+# --------------------------------
+
 def preprocess_audio(file_path):
 
-    # Load audio and convert to mono
-    audio, sr = librosa.load(file_path, sr=SAMPLE_RATE, mono=True)
+    # Load audio and resample to 16000 Hz
+    audio, sr = librosa.load(
+        file_path,
+        sr=SAMPLE_RATE,
+        mono=True
+    )
 
-    # Remove unnecessary silence
-    audio, _ = librosa.effects.trim(audio, top_db=60)
+    # Remove silence
+    audio, _ = librosa.effects.trim(
+        audio,
+        top_db=25
+    )
 
-    # Normalize audio volume
-    if np.max(np.abs(audio)) > 0:
-        audio = audio / np.max(np.abs(audio))
+    # Handle empty audio
+    if len(audio) == 0:
+        audio = np.zeros(TARGET_LENGTH)
 
-    # Make audio exactly 2 seconds
-    if len(audio) > SAMPLES:
-        audio = audio[:SAMPLES]     # Triming
+    # Normalize audio
+    peak = np.max(np.abs(audio))
+
+    if peak > 0:
+        audio = audio / peak
+
+    # Padding or trimming
+    if len(audio) < TARGET_LENGTH:
+
+        padding = TARGET_LENGTH - len(audio)
+
+        audio = np.pad(
+            audio,
+            (0, padding)
+        )
+
     else:
-        audio = np.pad(audio, (0, SAMPLES - len(audio)))  # padding
+        audio = audio[:TARGET_LENGTH]
 
-    return audio
+    return audio.astype(np.float32)
 
 
-# ----------------------------------
-# Process all animal audio files
-# ----------------------------------
-for animal in ANIMALS:
+# --------------------------------
+# 3. PROCESS ALL DATASET FILES
+# --------------------------------
 
-    animal_folder = os.path.join(RAW_FOLDER, animal)
-    output_folder = os.path.join(PROCESSED_FOLDER, animal)
+def main():
 
-    os.makedirs(output_folder, exist_ok=True)
+    total_files = 0
 
-    if not os.path.exists(animal_folder):
-        print(f"Folder not found: {animal_folder}")
-        continue
+    for animal in ANIMALS:
 
-    files = os.listdir(animal_folder)
+        input_folder = RAW_DIR / animal
+        output_folder = PROCESSED_DIR / animal
 
-    count = 0
+        output_folder.mkdir(
+            parents=True,
+            exist_ok=True
+        )
 
-    for file in files:
+        if not input_folder.exists():
+            print("Folder not found:", input_folder)
+            continue
 
-        if file.lower().endswith((".wav", ".mp3", ".flac", ".ogg")):
+        for file in sorted(input_folder.iterdir()):
 
-            input_path = os.path.join(animal_folder, file)
+            if file.suffix.lower() in [
+                ".wav", ".mp3", ".ogg", ".flac"
+            ]:
 
-            try:
-                audio = preprocess_audio(input_path)
+                processed_audio = preprocess_audio(file)
 
-                output_name = os.path.splitext(file)[0] + ".wav"
-                output_path = os.path.join(output_folder, output_name)
+                output_file = output_folder / (
+                    file.stem + ".wav"
+                )
 
-                # Save processed audio
-                sf.write(output_path, audio, SAMPLE_RATE)
+                sf.write(
+                    output_file,
+                    processed_audio,
+                    SAMPLE_RATE
+                )
 
-                count += 1
+                total_files += 1
 
-            except Exception as e:
-                print(f"Error processing {file}: {e}")
+        print(animal, "preprocessing completed")
 
-    print(f"{animal}: {count} files processed")
+    print("\nTotal processed files:", total_files)
 
-print("\nAudio preprocessing completed!")
+
+# --------------------------------
+# 4. RUN PROGRAM
+# --------------------------------
+
+if __name__ == "__main__":
+    main()

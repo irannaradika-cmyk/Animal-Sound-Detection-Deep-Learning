@@ -1,0 +1,30 @@
+MODEL EVALUATION AFTER VALIDATION FIX
+=====================================
+
+Source:
+  Actual labels: test_actual_labels_1d.npy
+  Predictions:  test_predictions_1d.npy
+  Model:        models/animal_sound_cnn.keras
+  Classes:      models/animal_classes.npy
+  Test split:   data_split_indices.npz
+
+Test samples: 50
+Correct predictions: 43
+Incorrect predictions: 7
+Test accuracy: 86.00%
+
+Classification report:
+              precision    recall  f1-score   support
+
+         cat       0.84      0.80      0.82        20
+         dog       0.91      1.00      0.95        20
+       sheep       0.78      0.70      0.74        10
+
+    accuracy                           0.86        50
+   macro avg       0.84      0.83      0.84        50
+weighted avg       0.86      0.86      0.86        50
+
+Confusion matrix (rows: actual, columns: predicted; cat, dog, sheep):
+[[16  2  2]
+ [ 0 20  0]
+ [ 3  0  7]]

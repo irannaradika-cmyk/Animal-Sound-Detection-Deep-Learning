@@ -1,0 +1,27 @@
+MODEL EVALUATION RESULTS
+========================
+
+Source:
+  Actual labels: results/test_actual_labels.npy
+  Predictions:  results/test_predictions.npy
+
+Test samples: 50
+Correct predictions: 45
+Incorrect predictions: 5
+Test accuracy: 90.00%
+
+Classification report:
+              precision    recall  f1-score   support
+
+         cat       0.83      0.95      0.88        20
+         dog       0.95      0.90      0.92        20
+       sheep       1.00      0.80      0.89        10
+
+    accuracy                           0.90        50
+   macro avg       0.92      0.88      0.90        50
+weighted avg       0.91      0.90      0.90        50
+
+Confusion matrix (rows: actual, columns: predicted; cat, dog, sheep):
+[[19  1  0]
+ [ 2 18  0]
+ [ 2  0  8]]
