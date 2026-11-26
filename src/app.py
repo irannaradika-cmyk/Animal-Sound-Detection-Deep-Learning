@@ -6,6 +6,7 @@ import pandas as pd
 import sqlite3
 import altair as alt
 import io
+
 from datetime import datetime
 from pathlib import Path
 
@@ -147,29 +148,22 @@ create_history_table()
 @st.cache_resource
 def load_animal_model():
 
-    model_path = PROJECT_DIR / "models" / "animal_sound_model.keras"
+    # Load model from project root
+    model_path = PROJECT_DIR / "animal_sound_model.keras"
 
-    # Prefer classes.npy because this is what
-    # the training script saves.
-    classes_path = PROJECT_DIR / "classes.npy"
-
-    # Use the older filename only if classes.npy
-    # does not exist.
-    if not classes_path.exists():
-
-        classes_path = PROJECT_DIR / "animal_classes.npy"
+    # Load animal classes
+    classes_path = PROJECT_DIR / "animal_classes.npy"
 
     if not model_path.exists():
 
         raise FileNotFoundError(
-            "Trained model not found in the models folder."
+            f"Model not found: {model_path}"
         )
 
     if not classes_path.exists():
 
         raise FileNotFoundError(
-            "Animal class file not found. "
-            "Expected classes.npy or animal_classes.npy."
+            f"Animal classes file not found: {classes_path}"
         )
 
     model = tf.keras.models.load_model(model_path)
@@ -182,8 +176,13 @@ def load_animal_model():
     if len(classes) != model.output_shape[-1]:
 
         raise ValueError(
-            "Number of animal classes does not match "
-            "the model output."
+            "Animal classes do not match model output."
+        )
+
+    if tuple(model.input_shape[1:]) != (126, 64):
+
+        raise ValueError(
+            f"Unexpected model input shape: {model.input_shape}"
         )
 
     return model, classes
@@ -205,18 +204,27 @@ except Exception as error:
 
 def preprocess_audio(audio):
 
-    # Use a fixed 2-second audio segment.
-    audio = audio[:32000]
+    # 1. Normalize audio volume
+    audio = librosa.util.normalize(audio)
 
-    # Add zeros if audio is shorter than 2 seconds.
-    if len(audio) < 32000:
+    # 2. Remove silence
+    audio, _ = librosa.effects.trim(audio)
+
+    # 3. Make audio exactly 2 seconds long
+    TARGET_LENGTH = 32000
+
+    if len(audio) > TARGET_LENGTH:
+
+        audio = audio[:TARGET_LENGTH]
+
+    elif len(audio) < TARGET_LENGTH:
 
         audio = np.pad(
             audio,
-            (0, 32000 - len(audio))
+            (0, TARGET_LENGTH - len(audio))
         )
 
-    # Extract Mel Spectrogram features.
+    # 4. Extract original Mel Spectrogram
     mel = librosa.feature.melspectrogram(
         y=audio,
         sr=16000,
@@ -225,27 +233,26 @@ def preprocess_audio(audio):
         hop_length=256
     )
 
-    # Convert to decibel scale.
-    mel_db = librosa.power_to_db(
-        mel,
-        ref=np.max
-    )
-
-    return mel_db
+    return mel
 
 
 # --------------------------------
-# 5. CONVERT FEATURES FOR 1D CNN
+# 5. PREPARE 1D CNN INPUT
 # --------------------------------
 
 def prepare_model_input(features):
 
     # Original shape: (64, 126)
     # Transposed shape: (126, 64)
-    features = np.transpose(features, (1, 0))
 
-    # Add batch dimension.
+    features = np.transpose(
+        features,
+        (1, 0)
+    )
+
+    # Add batch dimension
     # Final shape: (1, 126, 64)
+
     features = np.expand_dims(
         features,
         axis=0
@@ -298,13 +305,13 @@ def detect_animals(audio, sr):
 
             continue
 
-        # Extract audio features.
+        # Extract Mel Spectrogram
         features = preprocess_audio(chunk)
 
-        # Convert features for 1D CNN.
+        # Prepare 1D CNN input
         features = prepare_model_input(features)
 
-        # Predict animal.
+        # Predict animal
         prediction = model.predict(
             features,
             verbose=0
@@ -449,7 +456,7 @@ identify whether it contains a dog, cat or sheep sound.
 
 The application uses:
 
-- Log-Mel Spectrogram feature extraction
+- Mel Spectrogram feature extraction
 - Deep Learning with a 1D CNN
 - Animal sound classification
 - Confidence score and detection history
@@ -496,7 +503,7 @@ if uploaded_file is not None and predict_button:
 
         with st.spinner("Detecting animal sounds..."):
 
-            # Load audio at 16 kHz.
+            # Load audio at 16 kHz
             audio, sr = librosa.load(
                 io.BytesIO(audio_bytes),
                 sr=16000,
@@ -511,15 +518,15 @@ if uploaded_file is not None and predict_button:
 
                 duration = len(audio) / sr
 
-                # Extract features from the first 2 seconds.
+                # Extract features
                 overall_features = preprocess_audio(audio)
 
-                # Convert to 1D CNN input format.
+                # Prepare 1D CNN input
                 overall_features = prepare_model_input(
                     overall_features
                 )
 
-                # Predict the animal.
+                # Predict animal
                 overall_prediction = model.predict(
                     overall_features,
                     verbose=0
@@ -537,7 +544,7 @@ if uploaded_file is not None and predict_button:
                     overall_prediction[predicted_index] * 100
                 )
 
-                # Detect animal sounds in audio windows.
+                # Detect animal in audio windows
                 raw_results = detect_animals(
                     audio,
                     sr
@@ -555,20 +562,20 @@ if uploaded_file is not None and predict_button:
 
                 }
 
-                # Save uploaded audio history.
+                # Save uploaded audio history
                 save_uploaded_audio(
                     uploaded_file.name,
                     duration,
                     best_result
                 )
 
-                # Save individual detection records.
+                # Save detection records
                 save_history(
                     uploaded_file.name,
                     results
                 )
 
-                # Store result for display.
+                # Store result
                 st.session_state["last_prediction"] = {
 
                     "file_name": uploaded_file.name,
@@ -629,7 +636,7 @@ if "last_prediction" in st.session_state:
         f"Audio file: {result['file_name']}"
     )
 
-    # Confidence chart.
+    # Confidence chart
     st.subheader("📊 Confidence for Each Animal")
 
     chart_data = pd.DataFrame({
@@ -676,7 +683,7 @@ if "last_prediction" in st.session_state:
         use_container_width=True
     )
 
-    # Detection intervals.
+    # Detection intervals
     st.subheader("🐾 Detected Animal Time Intervals")
 
     st.caption(
@@ -777,7 +784,6 @@ if file_history.empty and detection_history.empty:
 
 else:
 
-    # Summary information.
     total_audio_files = len(file_history)
 
     total_detections = len(detection_history)

@@ -2,82 +2,62 @@
 import os
 import librosa
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 DATASET_PATH = "dataset/processed"
 ANIMALS = ["dog", "cat", "sheep"]
 
 SAMPLE_RATE = 16000
 N_MELS = 64
-TARGET_LENGTH = SAMPLE_RATE * 2  # 2 seconds = 32000 samples
+TARGET_LENGTH = SAMPLE_RATE * 2
 
-X = []
-y = []
-file_names = []
+file_paths = []
+labels = []
 
+# Collect original audio file paths and labels
 for animal in ANIMALS:
-
     folder_path = os.path.join(DATASET_PATH, animal)
-    files = sorted(os.listdir(folder_path))
 
-    for file in files:
-
+    for file in sorted(os.listdir(folder_path)):
         if file.lower().endswith(".wav"):
+            file_paths.append(os.path.join(folder_path, file))
+            labels.append(animal)
 
-            file_path = os.path.join(folder_path, file)
+file_paths = np.array(file_paths)
+labels = np.array(labels)
 
-            # 1. Load and resample audio to 16 kHz   (Resampling sr = 16000)
-            audio, sr = librosa.load(
-                file_path,
-                sr=SAMPLE_RATE
-            )
+# Split original recordings: 80% training, 20% testing
+train_paths, test_paths, train_labels, test_labels = train_test_split(
+    file_paths,
+    labels,
+    test_size=0.20,
+    random_state=42,
+    stratify=labels
+)
 
-            # 2. Normalize audio volume  (Normalization)
-            audio = librosa.util.normalize(audio)
+# Split training recordings: 80% training, 20% validation
+train_paths, val_paths, train_labels, val_labels = train_test_split(
+    train_paths,
+    train_labels,
+    test_size=0.20,
+    random_state=42,
+    stratify=train_labels
+)
 
-            # 3. Remove silence from beginning and end  (Trimming)
-            audio, _ = librosa.effects.trim(audio)
+# Save the original file splits
+np.savez(
+    "audio_splits.npz",
+    train_paths=train_paths,
+    train_labels=train_labels,
+    val_paths=val_paths,
+    val_labels=val_labels,
+    test_paths=test_paths,
+    test_labels=test_labels
+)
 
-            # 4. Make audio exactly 2 seconds long
-            if len(audio) > TARGET_LENGTH:
-                audio = audio[:TARGET_LENGTH]
+print("Training files:", len(train_paths))
+print("Validation files:", len(val_paths))
+print("Testing files:", len(test_paths))
+print("Total files:", len(file_paths))
+print("Dataset split saved successfully!")
 
-            elif len(audio) < TARGET_LENGTH:
-                audio = np.pad(                      #  (padding)
-                    audio,
-                    (0, TARGET_LENGTH - len(audio))
-                )
-
-            # Extract Mel Spectrogram
-            mel = librosa.feature.melspectrogram(
-                y=audio,
-                sr=sr,
-                n_mels=N_MELS,
-                n_fft=1024,
-                hop_length=256
-            )
-
-            # Convert to Log-Mel Spectrogram
-            mel_db = librosa.power_to_db(
-                mel,
-                ref=np.max
-            )
-
-            X.append(mel_db)
-            y.append(animal)
-            file_names.append(file_path)
-
-    print(f"{animal} features extracted")
-
-X = np.array(X)
-y = np.array(y)
-file_names = np.array(file_names)
-
-np.save("X_features.npy", X)
-np.save("y_labels.npy", y)
-np.save("feature_file_names.npy", file_names)
-
-print("\nFeature extraction completed!")
-print("Feature shape:", X.shape)
-print("Labels shape:", y.shape)
-print("File names saved:", len(file_names))
-print("Animal classes:", np.unique(y))

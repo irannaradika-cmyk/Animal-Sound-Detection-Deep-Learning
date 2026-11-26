@@ -7,6 +7,7 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 
 
 # --------------------------------
@@ -28,15 +29,25 @@ y = encoder.fit_transform(y)
 
 print("Animal classes:", encoder.classes_)
 
+unique, counts = np.unique(y, return_counts=True)
+
+print("\nAnimal Dataset Distribution:")
+
+for animal, count in zip(encoder.classes_, counts):
+    print(animal, ":", count)
+
 
 # --------------------------------
-# 2. PREPARE CNN INPUT
+# 2. PREPARE 1D CNN INPUT
 # --------------------------------
 
-X = X[..., np.newaxis]
+# Original shape: (samples, 64, 126)
+# New shape: (samples, 126, 64)
 
-# Each feature row must represent one original recording.
-# Your current feature extraction creates one feature per WAV file.
+X = np.transpose(X, (0, 2, 1))
+
+print("1D CNN input shape:", X.shape)
+
 
 # --------------------------------
 # 3. 80:20 TRAIN / TEST SPLIT
@@ -58,11 +69,12 @@ X_train, X_test, y_train, y_test, train_indices, test_indices = (
 print("\nTraining samples:", len(X_train))
 print("Testing samples:", len(X_test))
 
-# Verify no sample index occurs in both sets
+# Check no sample index occurs in both sets
 assert len(set(train_indices) & set(test_indices)) == 0
 
+
 # --------------------------------
-# 4. VALIDATION DATA FROM TRAINING
+# 4. VALIDATION DATA
 # --------------------------------
 
 X_train_final, X_val, y_train_final, y_val = (
@@ -80,33 +92,42 @@ print("Validation samples:", len(X_val))
 
 
 # --------------------------------
-# 5. BUILD ORIGINAL CNN MODEL
+# 5. BUILD 1D CNN MODEL
 # --------------------------------
 
 model = tf.keras.models.Sequential([
 
-    tf.keras.layers.Input(shape=(64, 126, 1)),
+    # Input: 126 time frames, 64 Mel features
+    tf.keras.layers.Input(shape=(126, 64)),
 
-    tf.keras.layers.Conv2D(
-        32, (3, 3), activation="relu"
+    # First convolution layer
+    tf.keras.layers.Conv1D(
+        32, 3, activation="relu"
     ),
 
-    tf.keras.layers.MaxPooling2D((2, 2)),
+    # First pooling layer
+    tf.keras.layers.MaxPooling1D(2),
 
-    tf.keras.layers.Conv2D(
-        64, (3, 3), activation="relu"
+    # Second convolution layer
+    tf.keras.layers.Conv1D(
+        64, 3, activation="relu"
     ),
 
-    tf.keras.layers.MaxPooling2D((2, 2)),
+    # Second pooling layer
+    tf.keras.layers.MaxPooling1D(2),
 
-    tf.keras.layers.Flatten(),
+    # Convert features into a single vector
+    tf.keras.layers.GlobalAveragePooling1D(),
 
+    # Fully connected layer
     tf.keras.layers.Dense(
         128, activation="relu"
     ),
 
+    # Reduce overfitting
     tf.keras.layers.Dropout(0.3),
 
+    # Output: 3 animal classes
     tf.keras.layers.Dense(
         3, activation="softmax"
     )
@@ -127,7 +148,24 @@ model.summary()
 
 
 # --------------------------------
-# 7. TRAIN MODEL
+# 7. CALCULATE CLASS WEIGHTS
+# --------------------------------
+
+class_weights = compute_class_weight(
+    class_weight="balanced",
+    classes=np.unique(y_train_final),
+    y=y_train_final
+)
+
+class_weights = dict(
+    enumerate(class_weights)
+)
+
+print("\nClass Weights:", class_weights)
+
+
+# --------------------------------
+# 8. TRAIN MODEL
 # --------------------------------
 
 history = model.fit(
@@ -136,12 +174,13 @@ history = model.fit(
     epochs=30,
     batch_size=16,
     validation_data=(X_val, y_val),
+    class_weight=class_weights,
     verbose=1
 )
 
 
 # --------------------------------
-# 8. FINAL INDEPENDENT TEST
+# 9. FINAL INDEPENDENT TEST
 # --------------------------------
 
 print("\nEvaluating on independent test data...")
@@ -159,7 +198,7 @@ print("Test Loss:", round(loss, 4))
 
 
 # --------------------------------
-# 9. PREDICTIONS
+# 10. PREDICTIONS
 # --------------------------------
 
 predictions = model.predict(
@@ -174,7 +213,7 @@ y_pred = np.argmax(
 
 
 # --------------------------------
-# 10. CLASSIFICATION REPORT
+# 11. CLASSIFICATION REPORT
 # --------------------------------
 
 print("\nClassification Report:")
@@ -191,7 +230,7 @@ print(
 
 
 # --------------------------------
-# 11. CONFUSION MATRIX
+# 12. CONFUSION MATRIX
 # --------------------------------
 
 cm = confusion_matrix(
@@ -221,7 +260,7 @@ plt.show()
 
 
 # --------------------------------
-# 12. TRAINING ACCURACY GRAPH
+# 13. TRAINING ACCURACY GRAPH
 # --------------------------------
 
 plt.figure(figsize=(8, 5))
@@ -238,7 +277,7 @@ plt.plot(
 
 plt.xlabel("Epochs")
 plt.ylabel("Accuracy")
-plt.title("CNN Model Accuracy")
+plt.title("1D CNN Model Accuracy")
 
 plt.legend()
 plt.grid()
@@ -249,7 +288,7 @@ plt.show()
 
 
 # --------------------------------
-# 13. TRAINING LOSS GRAPH
+# 14. TRAINING LOSS GRAPH
 # --------------------------------
 
 plt.figure(figsize=(8, 5))
@@ -266,7 +305,7 @@ plt.plot(
 
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
-plt.title("CNN Model Loss")
+plt.title("1D CNN Model Loss")
 
 plt.legend()
 plt.grid()
@@ -277,7 +316,7 @@ plt.show()
 
 
 # --------------------------------
-# 14. SAVE MODEL AND CLASSES
+# 15. SAVE MODEL AND CLASSES
 # --------------------------------
 
 model.save("animal_sound_model.keras")
@@ -289,14 +328,14 @@ np.save(
 
 
 # --------------------------------
-# 15. SAVE TEST RESULTS
+# 16. SAVE TEST RESULTS
 # --------------------------------
 
 np.save("test_predictions.npy", y_pred)
 np.save("test_actual_labels.npy", y_test)
 
 print("\n================================")
-print("MODEL TRAINING COMPLETED")
+print("1D CNN MODEL TRAINING COMPLETED")
 print("================================")
 
 print("Model saved: animal_sound_model.keras")
@@ -305,5 +344,6 @@ print("Confusion matrix saved: confusion_matrix.png")
 print("Accuracy graph saved: accuracy_graph.png")
 print("Loss graph saved: loss_graph.png")
 print("Test predictions saved.")
+
 print("Independent test accuracy:",
       round(accuracy * 100, 2), "%")

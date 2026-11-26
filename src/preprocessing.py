@@ -13,7 +13,7 @@ PROCESSED_FOLDER = "dataset/processed"
 # ----------------------------------
 # Settings
 # ----------------------------------
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 16000                # resampling  16000 HZ
 DURATION = 2  # seconds
 SAMPLES = SAMPLE_RATE * DURATION
 
@@ -40,9 +40,9 @@ def preprocess_audio(file_path):
 
     # Make audio exactly 2 seconds
     if len(audio) > SAMPLES:
-        audio = audio[:SAMPLES]
+        audio = audio[:SAMPLES]     # Triming
     else:
-        audio = np.pad(audio, (0, SAMPLES - len(audio)))
+        audio = np.pad(audio, (0, SAMPLES - len(audio)))  # padding
 
     return audio
 
