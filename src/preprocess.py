@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import numpy as np
 import librosa
@@ -24,30 +23,40 @@ TARGET_LENGTH = SAMPLE_RATE * DURATION
 
 def preprocess_audio(file_path):
 
-    # Load audio and resample to 16000 Hz
+    # 1. RESAMPLING:
+    # Convert the audio sample rate to 16000 Hz.
+    # This ensures that all audio recordings have the same sample rate.
+    # mono=True converts the audio into a single channel.
     audio, sr = librosa.load(
         file_path,
         sr=SAMPLE_RATE,
         mono=True
     )
 
-    # Remove silence
+    # 2. TRIMMING:
+    # Remove silent portions from the beginning and end of the audio.
+    # top_db=25 determines the silence threshold.
     audio, _ = librosa.effects.trim(
         audio,
         top_db=25
     )
 
-    # Handle empty audio
+    # Handle empty audio after silence removal.
     if len(audio) == 0:
         audio = np.zeros(TARGET_LENGTH)
 
-    # Normalize audio
+    # 3. NORMALIZATION:
+    # Normalize the audio amplitude to keep the peak value
+    # within the range of -1 to +1.
     peak = np.max(np.abs(audio))
 
     if peak > 0:
         audio = audio / peak
 
-    # Padding or trimming
+    # 4. PADDING AND TRIMMING:
+    # Make every audio recording exactly 2 seconds long.
+    # If the audio is shorter, add zeros (padding).
+    # If the audio is longer, cut it to the required length.
     if len(audio) < TARGET_LENGTH:
 
         padding = TARGET_LENGTH - len(audio)
@@ -60,6 +69,7 @@ def preprocess_audio(file_path):
     else:
         audio = audio[:TARGET_LENGTH]
 
+    # Return the processed audio in float32 format.
     return audio.astype(np.float32)
 
 
@@ -91,12 +101,15 @@ def main():
                 ".wav", ".mp3", ".ogg", ".flac"
             ]:
 
+                # Apply all four preprocessing operations.
                 processed_audio = preprocess_audio(file)
 
                 output_file = output_folder / (
                     file.stem + ".wav"
                 )
 
+                # Save the processed audio as a WAV file
+                # with a sample rate of 16000 Hz.
                 sf.write(
                     output_file,
                     processed_audio,
